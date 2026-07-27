@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#f7f7f5" />
+  <meta
+    name="description"
+    content="An estimated live map of the Paris Métro."
+  />
+  <meta property="og:title" content="Paris Métro" />
+  <meta
+    property="og:description"
+    content="An estimated live map of the Paris Métro."
+  />
+  <meta property="og:type" content="website" />
+  <meta property="og:locale" content="fr_FR" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="Paris Métro" />
+  <meta
+    name="twitter:description"
+    content="An estimated live map of the Paris Métro."
+  />
+  <title>Paris Métro</title>
+  <link rel="icon" type="image/svg+xml" href="/metro-pictograms/1.svg" />
+  <link rel="stylesheet" href="/src/map.css" />
+</head>
+<body class="is-loading">
+  <section
+    class="metro-loader"
+    id="metroLoader"
+    role="progressbar"
+    aria-label="Chargement des métros"
+    aria-valuemin="0"
+    aria-valuemax="100"
+    aria-valuenow="0"
+  >
+    <div class="metro-loader__content">
+      <div class="metro-picto metro-loader__badge" id="metroLoaderBadge" aria-hidden="true">
+        <img
+          class="metro-picto__image"
+          src="/metro-pictograms/1.svg"
+          alt=""
+        />
+      </div>
+    </div>
+  </section>
+
+  <main
+    class="map"
+    id="map"
+    tabindex="0"
+    aria-label="Carte estimée en temps réel du métro parisien. Utilisez les flèches pour vous déplacer, plus et moins pour zoomer."
+  >
+    <canvas id="baseMap" aria-hidden="true"></canvas>
+    <canvas id="liveMap" aria-hidden="true"></canvas>
+  </main>
+
+  <aside class="station-details" id="stationDetails" role="group" hidden>
+    <div class="station-details__lines" id="stationDetailsLines"></div>
+  </aside>
+
+  <footer class="bottom-controls">
+    <nav class="line-picker lines" id="lines" aria-label="Choisir une ligne de métro"></nav>
+    <div class="map-options" role="group" aria-label="Map options">
+      <button
+        class="map-options__item"
+        id="hideLinesOption"
+        type="button"
+        role="switch"
+        aria-checked="false"
+      >
+        <span>Hide lines</span>
+        <span class="map-options__switch" aria-hidden="true"></span>
+      </button>
+    </div>
+  </footer>
+
+  <a
+    class="maker-credit"
+    href="https://www.paulpalmieri.com/"
+    target="_blank"
+    rel="noreferrer"
+    aria-label="Made with love by Paul Palmieri"
+  >
+    Made with
+    <svg
+      class="maker-credit__heart"
+      viewBox="0 0 16 16"
+      aria-hidden="true"
+    >
+      <path d="M8 14.1 2.2 8.5A3.8 3.8 0 0 1 7.6 3L8 3.4l.4-.4a3.8 3.8 0 0 1 5.4 5.5Z" />
+    </svg>
+    by Paul Palmieri
+  </a>
+
+  <small class="credit">Données estimées · Île-de-France Mobilités · Fond © OpenStreetMap, © CARTO</small>
+
+  <script type="module" src="/src/map.js"></script>
+</body>
+</html>
