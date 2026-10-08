@@ -412,6 +412,17 @@ function tileEntry(zoom, x, y) {
   image.decoding = "async";
   image.crossOrigin = "anonymous";
   image.onload = () => {
+    // OSM standard tiles are colourful; mute them once per tile (not per frame)
+    // so the lines stay dominant.
+    const muted = document.createElement("canvas");
+    muted.width = image.naturalWidth;
+    muted.height = image.naturalHeight;
+    const mutedContext = muted.getContext("2d");
+    mutedContext.filter = "grayscale(1) brightness(1.12) contrast(.8)";
+    mutedContext.drawImage(image, 0, 0);
+    muted.naturalWidth = muted.width;
+    muted.naturalHeight = muted.height;
+    entry.image = muted;
     entry.ready = true;
     entry.loadedAt = performance.now();
     markBaseDirty();
@@ -530,10 +541,7 @@ function drawTiles(context) {
         hasFallback = drawTileFallback(context, tileZoom, x, y, screenX, screenY, scaledTile);
       }
       context.globalAlpha = .9 * (hasFallback ? blend : 1);
-      // OSM standard tiles are colourful; mute them so the lines stay dominant.
-      context.filter = "grayscale(1) brightness(1.12) contrast(.8)";
       context.drawImage(entry.image, screenX, screenY, scaledTile + .5, scaledTile + .5);
-      context.filter = "none";
       if (hasFallback && blend < 1) fading = true;
     }
   }
