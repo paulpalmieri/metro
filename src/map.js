@@ -400,7 +400,6 @@ function tileEntry(zoom, x, y) {
   const limit = 2 ** zoom;
   if (y < 0 || y >= limit) return null;
   const wrappedX = (x % limit + limit) % limit;
-  const density = viewport.ratio > 1 ? "@2x" : "";
   const key = tileCacheKey(zoom, x, y);
   const cached = tileCache.get(key);
   if (cached) {
@@ -417,7 +416,7 @@ function tileEntry(zoom, x, y) {
     entry.loadedAt = performance.now();
     markBaseDirty();
   };
-  image.src = `https://a.basemaps.cartocdn.com/light_all/${zoom}/${wrappedX}/${y}${density}.png`;
+  image.src = `https://tile.openstreetmap.org/${zoom}/${wrappedX}/${y}.png`;
   tileCache.set(key, entry);
   return entry;
 }
@@ -531,7 +530,10 @@ function drawTiles(context) {
         hasFallback = drawTileFallback(context, tileZoom, x, y, screenX, screenY, scaledTile);
       }
       context.globalAlpha = .9 * (hasFallback ? blend : 1);
+      // OSM standard tiles are colourful; mute them so the lines stay dominant.
+      context.filter = "grayscale(1) brightness(1.12) contrast(.8)";
       context.drawImage(entry.image, screenX, screenY, scaledTile + .5, scaledTile + .5);
+      context.filter = "none";
       if (hasFallback && blend < 1) fading = true;
     }
   }
