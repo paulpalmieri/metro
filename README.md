@@ -55,7 +55,7 @@ The interpolation model and calibration process are documented in
 
 Timetables and service status come from
 [Île-de-France Mobilités PRIM](https://prim.iledefrance-mobilites.fr/).
-The base map uses OpenStreetMap standard tiles. The line pictograms are
+The base map uses OpenFreeMap "positron" vector tiles (rendered with MapLibre GL, OpenStreetMap data). The line pictograms are
 public-domain files from Wikimedia Commons.
 
 This project is not affiliated with Île-de-France Mobilités or RATP.

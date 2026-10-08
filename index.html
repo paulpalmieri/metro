@@ -52,6 +52,7 @@
     tabindex="0"
     aria-label="Carte estimée en temps réel du métro parisien. Utilisez les flèches pour vous déplacer, plus et moins pour zoomer."
   >
+    <div id="basemap" aria-hidden="true"></div>
     <canvas id="baseMap" aria-hidden="true"></canvas>
     <canvas id="liveMap" aria-hidden="true"></canvas>
   </main>
@@ -94,7 +95,7 @@
     by Paul Palmieri
   </a>
 
-  <small class="credit">Données estimées · Île-de-France Mobilités · Fond © OpenStreetMap</small>
+  <small class="credit">Données estimées · Île-de-France Mobilités · Fond © OpenStreetMap, © OpenMapTiles, OpenFreeMap</small>
 
   <script type="module" src="/src/map.js"></script>
 </body>

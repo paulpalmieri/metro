@@ -1,5 +1,8 @@
 import "@fontsource/fira-sans-condensed/latin-500.css";
 import "@fontsource/fira-sans-condensed/latin-600.css";
+import * as maplibregl from "maplibre-gl";
+import maplibreWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?url";
+import "maplibre-gl/dist/maplibre-gl.css";
 import { inject } from "@vercel/analytics";
 import STATIONS from "./data/stations.json";
 import GEOMETRY from "./data/metro-geometry.json";
@@ -150,7 +153,6 @@ const OVERVIEW_LABEL_FADE_DURATION = 180;
 const TRAIN_FOLLOW_MIN_ZOOM = MAX_ZOOM - .35;
 const OVERVIEW_ZOOM_BIAS = { mobile: 4, desktop: 2.7 };
 const OVERVIEW_FOCUS_STATION = "Châtelet";
-const TILE_CACHE_LIMIT = 180;
 const ROUTE_WIDTH = 3.6;
 const ROUTE_CASING_WIDTH = 5.8;
 const LABEL_ENTER_DURATION = 160;
@@ -173,7 +175,17 @@ const map = document.querySelector("#map");
 const baseCanvas = document.querySelector("#baseMap");
 const liveCanvas = document.querySelector("#liveMap");
 const focusCanvas = document.createElement("canvas");
-const baseContext = baseCanvas.getContext("2d", { alpha: false });
+const baseContext = baseCanvas.getContext("2d");
+maplibregl.setWorkerUrl(maplibreWorkerUrl);
+const basemap = new maplibregl.Map({
+  container: "basemap",
+  style: "https://tiles.openfreemap.org/styles/positron",
+  interactive: false,
+  attributionControl: false,
+  fadeDuration: 0,
+  center: [2.35, 48.86],
+  zoom: 10,
+});
 const liveContext = liveCanvas.getContext("2d");
 const focusContext = focusCanvas.getContext("2d");
 const lines = document.querySelector("#lines");
@@ -233,7 +245,6 @@ const labelZoomStates = {
   detail: { opacity: 0, from: 0, target: 0, startedAt: 0 },
 };
 
-const tileCache = new Map();
 const renderStates = new Map();
 const pointers = new Map();
 let gesture = null;
@@ -388,166 +399,11 @@ function scheduleViewportResize() {
   });
 }
 
-function tileCacheKey(zoom, x, y) {
-  const limit = 2 ** zoom;
-  if (y < 0 || y >= limit) return null;
-  const wrappedX = (x % limit + limit) % limit;
-  const density = viewport.ratio > 1 ? "@2x" : "";
-  return `${zoom}/${wrappedX}/${y}/${density}`;
-}
-
-function tileEntry(zoom, x, y) {
-  const limit = 2 ** zoom;
-  if (y < 0 || y >= limit) return null;
-  const wrappedX = (x % limit + limit) % limit;
-  const key = tileCacheKey(zoom, x, y);
-  const cached = tileCache.get(key);
-  if (cached) {
-    cached.usedAt = performance.now();
-    return cached;
-  }
-
-  const image = new Image();
-  const entry = { image, ready: false, loadedAt: 0, usedAt: performance.now() };
-  image.decoding = "async";
-  image.crossOrigin = "anonymous";
-  image.onload = () => {
-    // OSM standard tiles are colourful; mute them once per tile (not per frame)
-    // so the lines stay dominant.
-    const muted = document.createElement("canvas");
-    muted.width = image.naturalWidth;
-    muted.height = image.naturalHeight;
-    const mutedContext = muted.getContext("2d");
-    mutedContext.filter = "grayscale(1) brightness(1.12) contrast(.8)";
-    mutedContext.drawImage(image, 0, 0);
-    muted.naturalWidth = muted.width;
-    muted.naturalHeight = muted.height;
-    entry.image = muted;
-    entry.ready = true;
-    entry.loadedAt = performance.now();
-    markBaseDirty();
-  };
-  image.src = `https://tile.openstreetmap.org/${zoom}/${wrappedX}/${y}.png`;
-  tileCache.set(key, entry);
-  return entry;
-}
-
-function cachedTile(zoom, x, y) {
-  const key = tileCacheKey(zoom, x, y);
-  if (!key) return null;
-  const entry = tileCache.get(key);
-  if (!entry?.ready) return null;
-  entry.usedAt = performance.now();
-  return entry;
-}
-
-function pruneTileCache() {
-  if (tileCache.size <= TILE_CACHE_LIMIT) return;
-  const oldest = [...tileCache.entries()]
-    .sort((left, right) => left[1].usedAt - right[1].usedAt)
-    .slice(0, tileCache.size - TILE_CACHE_LIMIT);
-  oldest.forEach(([key]) => tileCache.delete(key));
-}
-
-function drawTileFallback(context, zoom, x, y, screenX, screenY, size) {
-  for (let depth = 1; depth <= 3 && zoom - depth >= 0; depth += 1) {
-    const factor = 2 ** depth;
-    const parentX = Math.floor(x / factor);
-    const parentY = Math.floor(y / factor);
-    const parent = cachedTile(zoom - depth, parentX, parentY);
-    if (!parent) continue;
-    const sourceWidth = parent.image.naturalWidth / factor;
-    const sourceHeight = parent.image.naturalHeight / factor;
-    const column = (x % factor + factor) % factor;
-    const row = y - parentY * factor;
-    context.drawImage(
-      parent.image,
-      column * sourceWidth,
-      row * sourceHeight,
-      sourceWidth,
-      sourceHeight,
-      screenX,
-      screenY,
-      size + .5,
-      size + .5,
-    );
-    return true;
-  }
-
-  // When zooming out, the previous layer consists of four cached child tiles.
-  // Recompose any that are available while the lower-resolution tile loads.
-  let drawn = false;
-  const childSize = size / 2;
-  for (let row = 0; row < 2; row += 1) {
-    for (let column = 0; column < 2; column += 1) {
-      const child = cachedTile(zoom + 1, x * 2 + column, y * 2 + row);
-      if (!child) continue;
-      context.drawImage(
-        child.image,
-        screenX + column * childSize,
-        screenY + row * childSize,
-        childSize + .5,
-        childSize + .5,
-      );
-      drawn = true;
-    }
-  }
-  return drawn;
-}
-
-function prefetchTiles(zoom, centre = { x: camera.targetX, y: camera.targetY }) {
-  const tileZoom = clamp(Math.floor(zoom), 0, 20);
-  const count = 2 ** tileZoom;
-  const scaledTile = TILE_SIZE * 2 ** (zoom - tileZoom);
-  const centreX = centre.x * count;
-  const centreY = centre.y * count;
-  const minX = Math.floor(centreX - viewport.width / (2 * scaledTile)) - 1;
-  const maxX = Math.ceil(centreX + viewport.width / (2 * scaledTile)) + 1;
-  const minY = Math.floor(centreY - viewport.height / (2 * scaledTile)) - 1;
-  const maxY = Math.ceil(centreY + viewport.height / (2 * scaledTile)) + 1;
-  for (let x = minX; x <= maxX; x += 1) {
-    for (let y = minY; y <= maxY; y += 1) tileEntry(tileZoom, x, y);
-  }
-}
-
-function drawTiles(context) {
-  const tileZoom = clamp(Math.floor(camera.zoom), 0, 20);
-  const count = 2 ** tileZoom;
-  const scaledTile = TILE_SIZE * 2 ** (camera.zoom - tileZoom);
-  const centreX = camera.x * count;
-  const centreY = camera.y * count;
-  const minX = Math.floor(centreX - viewport.width / (2 * scaledTile)) - 1;
-  const maxX = Math.ceil(centreX + viewport.width / (2 * scaledTile)) + 1;
-  const minY = Math.floor(centreY - viewport.height / (2 * scaledTile)) - 1;
-  const maxY = Math.ceil(centreY + viewport.height / (2 * scaledTile)) + 1;
-
-  context.save();
-  let fading = false;
-  for (let x = minX; x <= maxX; x += 1) {
-    for (let y = minY; y <= maxY; y += 1) {
-      const entry = tileEntry(tileZoom, x, y);
-      const screenX = (x - centreX) * scaledTile + viewport.width / 2;
-      const screenY = (y - centreY) * scaledTile + viewport.height / 2;
-      if (!entry?.ready) {
-        context.globalAlpha = .9;
-        drawTileFallback(context, tileZoom, x, y, screenX, screenY, scaledTile);
-        continue;
-      }
-
-      const blend = clamp((performance.now() - entry.loadedAt) / 180, 0, 1);
-      let hasFallback = false;
-      if (blend < 1) {
-        context.globalAlpha = .9;
-        hasFallback = drawTileFallback(context, tileZoom, x, y, screenX, screenY, scaledTile);
-      }
-      context.globalAlpha = .9 * (hasFallback ? blend : 1);
-      context.drawImage(entry.image, screenX, screenY, scaledTile + .5, scaledTile + .5);
-      if (hasFallback && blend < 1) fading = true;
-    }
-  }
-  context.restore();
-  pruneTileCache();
-  return fading;
+function syncBasemap() {
+  const longitude = camera.x * 360 - 180;
+  const latitude = Math.atan(Math.sinh(Math.PI * (1 - 2 * camera.y))) * 180 / Math.PI;
+  // MapLibre uses 512px world tiles, the camera 256px ones.
+  basemap.jumpTo({ center: [longitude, latitude], zoom: camera.zoom - 1 });
 }
 
 function tracePath(context, path) {
@@ -994,13 +850,12 @@ function drawFocusLayer(timestamp) {
 function drawBase(timestamp) {
   baseContext.save();
   baseContext.setTransform(viewport.scaleX, 0, 0, viewport.scaleY, 0, 0);
-  baseContext.fillStyle = "#e8e9e4";
-  baseContext.fillRect(0, 0, viewport.width, viewport.height);
-  const tilesFading = drawTiles(baseContext);
+  baseContext.clearRect(0, 0, viewport.width, viewport.height);
+  syncBasemap();
   drawBackgroundNetwork(baseContext);
   baseContext.restore();
   const labelsAnimating = drawFocusLayer(timestamp);
-  baseDirty = tilesFading || labelsAnimating;
+  baseDirty = labelsAnimating;
 }
 
 function updatePlans(nextSnapshot, observedAt = Date.now()) {
@@ -1455,10 +1310,6 @@ function followTrain(record) {
   );
   camera.velocityX = 0;
   camera.velocityY = 0;
-  prefetchTiles(camera.targetZoom, {
-    x: record.position.projected.x,
-    y: record.position.projected.y,
-  });
   markBaseDirty();
 }
 
@@ -1527,7 +1378,6 @@ function setZoom(nextZoom, anchorX = viewport.width / 2, anchorY = viewport.heig
     camera.x = camera.targetX;
     camera.y = camera.targetY;
   }
-  prefetchTiles(camera.targetZoom, { x: camera.targetX, y: camera.targetY });
   markBaseDirty();
 }
 
@@ -1577,7 +1427,6 @@ function fitNetwork(code = null, animate = true) {
     camera.y = camera.targetY;
     camera.zoom = camera.targetZoom;
   }
-  prefetchTiles(camera.targetZoom, { x: camera.targetX, y: camera.targetY });
   markBaseDirty();
   stopFollowingTrain();
 }
